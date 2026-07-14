@@ -40,6 +40,12 @@ The app is a static frontend. It does not require a backend, but it should be se
 
 For GitHub Pages, serve the repository root. The root `index.html` redirects visitors to `src/index.html`, where the application lives.
 
+Canonical cloud URL:
+
+```text
+https://zhuozhaowu.github.io/quick-crystal/
+```
+
 If you use the included workflow:
 
 1. Push the repository to GitHub with `main` as the default branch.
