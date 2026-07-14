@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Crystal</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23f8fafc'/%3E%3Cpath d='M32 8 52 20v24L32 56 12 44V20L32 8Z' fill='none' stroke='%231e3a5f' stroke-width='5' stroke-linejoin='round'/%3E%3Cpath d='M32 8v24l20-12M32 32 12 20m20 12v24' fill='none' stroke='%23059669' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="../vendor/fonts/fira.css">
+    <link rel="stylesheet" href="../vendor/phosphor/2.1.2/regular/style.css">
+    <link rel="stylesheet" href="./styles/tailwind.css">
+    <style>
+        :root {
+            --surface: rgba(255,255,255,0.94);
+            --surface-strong: rgba(255,255,255,0.98);
+            --surface-muted: #f8fafc;
+            --ink: #0f172a;
+            --ink-soft: #334155;
+            --ink-muted: #64748b;
+            --primary: #1e3a5f;
+            --primary-dark: #0f2742;
+            --accent: #059669;
+            --border: #dbe3ef;
+            --border-strong: #a8b6c8;
+            --ring: rgba(30,58,95,0.22);
+            --shadow-panel: 0 18px 48px rgba(15,23,42,0.14);
+            --shadow-control: 0 1px 2px rgba(15,23,42,0.05);
+            --radius: 8px;
+            --z-canvas: 1;
+            --z-panel: 10;
+            --z-toolbar: 11;
+            --z-overlay: 50;
+        }
+
+        * { box-sizing: border-box; }
+        body { margin: 0; overflow: hidden; background-color: #f8fafc; color: var(--ink); font-family: "Fira Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-feature-settings: "tnum"; }
+        #canvas-container { position: absolute; top: 18px; left: 410px; right: 18px; bottom: 18px; z-index: 1; background: #ffffff; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-panel); overflow: hidden; }
+        #canvas-container canvas { display: block; width: 100% !important; height: 100% !important; }
+        .toolbar-brand { min-width: 176px; }
+        .toolbar-title { font-size: 1.08rem; font-weight: 800; color: var(--ink); line-height: 1; letter-spacing: 0; }
+        .toolbar-subtitle { margin-top: 4px; font-size: 0.72rem; font-weight: 650; color: var(--ink-muted); }
+        .sidebar-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-weight: 800; background: var(--surface-strong); color: var(--ink); cursor: pointer; box-shadow: var(--shadow-control); transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.16s ease; }
+        .sidebar-action:hover { background: #f8fafc; border-color: var(--border-strong); color: var(--primary); }
+        .sidebar-action.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .sidebar-action.primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); color: #fff; }
+        .sidebar-action:active { transform: translateY(1px); }
+        .open-section { padding: 0; background: transparent; border: 0; overflow: visible; }
+        .export-actions { display: grid; gap: 8px; }
+        .modal-backdrop { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; background: rgba(15,23,42,0.22); backdrop-filter: blur(4px); }
+        .modal-backdrop.is-open { display: flex; }
+        #file-protocol-warning { display: none; position: fixed; inset: 0; z-index: 90; align-items: center; justify-content: center; padding: 24px; background: rgba(248,250,252,0.92); backdrop-filter: blur(10px); }
+        #file-protocol-warning.is-open { display: flex; }
+        .file-warning-card { width: min(520px, 100%); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-strong); box-shadow: var(--shadow-panel); padding: 18px; }
+        .file-warning-title { color: var(--ink); font-size: 1.08rem; font-weight: 850; }
+        .file-warning-copy { margin-top: 8px; color: var(--ink-soft); font-size: 0.9rem; font-weight: 700; line-height: 1.5; }
+        .file-warning-path { display: block; margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: #f8fafc; color: var(--primary); font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; font-weight: 800; overflow-wrap: anywhere; }
+        .export-dialog { width: min(330px, calc(100vw - 32px)); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-panel); overflow: hidden; }
+        .export-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); color: var(--ink); font-weight: 850; }
+        .export-dialog-close { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--ink-soft); cursor: pointer; }
+        .export-dialog-close:hover { border-color: var(--border-strong); color: var(--primary); }
+        .export-dialog-body { display: grid; gap: 14px; padding: 14px; }
+        .export-dialog-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; color: var(--ink-soft); font-size: 0.82rem; font-weight: 800; }
+        .export-dialog-row .control-number { width: 116px; min-width: 116px; text-align: left; }
+        .export-dialog-check { display: flex; align-items: center; gap: 9px; color: var(--ink); font-size: 0.84rem; font-weight: 700; }
+        .export-dialog-footer { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 14px 14px; }
+        
+        /* Style and export panel */
+        #ui-container { position: absolute; top: 18px; left: 18px; right: auto; z-index: var(--z-panel); width: 374px; height: calc(100vh - 36px); background: var(--surface); backdrop-filter: blur(18px); border-radius: var(--radius); box-shadow: var(--shadow-panel); padding: 12px; overflow-y: auto; border: 1px solid var(--border);}
+
+        /* Unified control panel */
+        .panel-actions { display: flex; align-items: center; gap: 8px; }
+        .help-button { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-strong); color: var(--primary); font-weight: 850; cursor: pointer; box-shadow: var(--shadow-control); transition: background 0.18s ease, border-color 0.18s ease, transform 0.16s ease; }
+        .help-button:hover, .help-button[aria-expanded="true"] { background: #eff6ff; border-color: #93b6e8; }
+        .help-button:active { transform: translateY(1px); }
+        .help-popover { display: none; margin: 0 0 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(255,255,255,0.96); color: var(--ink-soft); font-size: 0.76rem; font-weight: 700; line-height: 1.4; box-shadow: var(--shadow-control); }
+        .help-popover.is-open { display: block; }
+        .help-popover-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: var(--ink); font-size: 0.82rem; font-weight: 850; }
+        .help-popover-header span { color: var(--ink-muted); font-size: 0.68rem; font-weight: 750; text-transform: uppercase; letter-spacing: 0.04em; }
+        .help-list { display: grid; gap: 7px; }
+        .help-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px; border: 1px solid rgba(219,227,239,0.84); border-radius: 7px; background: #fff; }
+        .help-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; background: #eff6ff; color: var(--primary); font-size: 1rem; }
+        .help-row-title { color: var(--ink); font-size: 0.78rem; font-weight: 850; line-height: 1.2; }
+        .help-row-copy { margin-top: 4px; color: var(--ink-muted); font-size: 0.71rem; font-weight: 700; line-height: 1.45; }
+        .help-key { display: inline-flex; align-items: center; min-height: 18px; padding: 1px 5px; border: 1px solid var(--border); border-radius: 5px; background: #f8fafc; color: var(--ink-soft); font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.66rem; font-weight: 800; }
+        .view-button-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+        .axis-button { min-height: 38px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--ink); font-weight: 850; cursor: pointer; box-shadow: var(--shadow-control); transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.16s ease; }
+        .axis-button:hover { background: #eff6ff; border-color: #93b6e8; color: var(--primary); }
+        .axis-button:active { transform: translateY(1px); }
+        .section-subtitle { display: block; margin-bottom: 8px; color: var(--ink-soft); font-size: 0.82rem; font-weight: 800; }
+        .panel-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        .panel-field-label { display: block; color: var(--ink-muted); font-size: 0.72rem; font-weight: 800; margin-bottom: 5px; }
+        .radio-stack { display: grid; gap: 8px; }
+        .view-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+        .view-card-header .section-subtitle { margin-bottom: 0; }
+        .view-card-actions { display: flex; align-items: center; gap: 6px; }
+        .view-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--ink-soft); box-shadow: var(--shadow-control); cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease; }
+        .view-icon-button:hover { background: #f8fafc; border-color: var(--border-strong); color: var(--primary); }
+        .view-icon-button:active { transform: translateY(1px); }
+        .view-icon-button i { font-size: 1rem; }
+        .view-mode-panel { display: none; }
+        .view-mode-panel.is-active { display: block; }
+        .tool-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: rgba(248,250,252,0.74); }
+        .tool-card + .tool-card { margin-top: 10px; }
+        .view-mode-panel + .view-mode-panel { margin-top: 0; }
+        .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px 12px; }
+        .panel-title { display: flex; align-items: center; gap: 8px; font-size: 1.08rem; font-weight: 850; color: var(--ink); letter-spacing: 0; }
+        .panel-title i { color: var(--primary); }
+        .panel-kicker { font-size: 0.72rem; font-weight: 700; color: var(--ink-muted); }
+        .inspector-section { border: 1px solid var(--border); border-radius: var(--radius); background: rgba(248,250,252,0.74); overflow: hidden; }
+        .inspector-section + .inspector-section { margin-top: 10px; }
+        .inspector-section summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; cursor: pointer; list-style: none; color: var(--ink); font-weight: 800; transition: background 0.18s ease, color 0.18s ease; }
+        .inspector-section summary:hover { background: #f8fafc; }
+        .inspector-section summary::-webkit-details-marker { display: none; }
+        .inspector-section summary::after { content: "+"; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: #fff; font-size: 0.92rem; line-height: 1; color: var(--ink-muted); }
+        .inspector-section[open] summary { border-bottom: 1px solid var(--border); color: var(--primary); background: #fff; }
+        .inspector-section[open] summary::after { content: "-"; }
+        .inspector-body { padding: 12px; background: rgba(255,255,255,0.72); }
+
+        /* Custom scrollbars */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .control-group { margin-bottom: 14px; }
+        .control-group:last-child { margin-bottom: 0; }
+        .control-label { display: flex; justify-content: space-between; gap: 10px; font-size: 0.82rem; font-weight: 700; color: var(--ink-soft); margin-bottom: 7px; }
+        .control-inline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .control-inline .control-label { flex: 1; margin-bottom: 0; min-width: 0; }
+        .control-inline .control-number { width: 116px; min-width: 116px; text-align: left; }
+        
+        .control-number, .panel-number, #export-scale, #color-value-input, #color-mode-select { min-height: 36px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--ink); font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 650; box-shadow: var(--shadow-control); outline: none; transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease; }
+        .control-number { width: 100%; padding: 7px 9px; }
+        .panel-number { width: 100%; padding: 6px 8px; }
+        .control-number:focus, .panel-number:focus, #export-scale:focus, #color-value-input:focus, #color-mode-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+        
+        .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 10px; border-radius: 7px; font-weight: 750; cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.16s ease; border: 1px solid var(--border); box-shadow: var(--shadow-control); }
+        .btn:active { transform: translateY(1px); }
+        .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-secondary { background: #fff; color: var(--ink); margin-top: 10px;}
+        .btn-secondary:hover { background: #f8fafc; border-color: var(--border-strong); color: var(--primary); }
+
+        #loading-overlay { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(248,250,252,0.84); backdrop-filter: blur(10px); z-index: var(--z-overlay); justify-content: center; align-items: center; flex-direction: column; color: var(--ink); }
+        .spinner { border: 4px solid #e2e8f0; border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #axis-widget { position: absolute; right: 36px; bottom: 26px; z-index: 12; width: 104px; height: 104px; pointer-events: none; overflow: visible; background: transparent; border: 0; box-shadow: none; }
+        #axis-widget .axis-rim { display: none; }
+        #axis-widget .axis-origin { fill: #0f172a; stroke: #fff; stroke-width: 2; }
+        #axis-widget .axis-back { stroke: #94a3b8; stroke-width: 2; stroke-linecap: round; opacity: 0.38; }
+        #axis-widget .axis-line { stroke-width: 4; stroke-linecap: round; }
+        #axis-widget .axis-dot { stroke: #fff; stroke-width: 2; }
+        #axis-widget .axis-label { font-size: 13px; font-weight: 900; font-family: inherit; text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
+        @media (max-width: 900px) {
+            #axis-widget { right: 36px; width: 96px; height: 96px; }
+        }
+        .color-chip { width: 38px; height: 34px; border: 1px solid var(--border-strong); border-radius: 7px; cursor: pointer; box-shadow: inset 0 0 0 2px rgba(255,255,255,0.72), var(--shadow-control); transition: transform 0.16s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
+        .color-chip:hover { border-color: var(--primary); }
+        .color-chip:active { transform: translateY(1px); }
+        #color-popover { position: fixed; z-index: 80; width: 280px; max-height: calc(100vh - 24px); padding: 12px; background: var(--surface-strong); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-panel); display: none; overflow-y: auto; overflow-x: hidden; }
+        #color-popover-close { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--ink); font-weight: 850; cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease; }
+        #color-popover-close:hover { background: #f8fafc; border-color: var(--border-strong); color: var(--primary); }
+        .color-picker-body { width: 230px; margin-inline: auto; }
+        #color-swatch-grid { width: 230px; }
+        #color-preview { border: 1px solid var(--border); border-radius: 7px; box-shadow: inset 0 0 0 2px rgba(255,255,255,0.72), var(--shadow-control); }
+        .color-input-row { display: grid; grid-template-columns: 40px 58px minmax(0, 116px); align-items: center; gap: 8px; width: 230px; }
+        #color-mode-select { width: 100%; padding: 0 5px; font-size: 0.72rem; cursor: pointer; }
+        #color-value-input { width: 100%; min-width: 0; padding: 8px 7px; font-size: 0.76rem; text-transform: uppercase; }
+        #color-apply { width: 230px; }
+        .color-swatch { width: 26px; height: 26px; border: 1px solid rgba(15,23,42,0.44); border-radius: 6px; cursor: pointer; box-shadow: var(--shadow-control); }
+        .color-swatch.is-selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+        .empty-state { padding: 14px 8px; text-align: center; color: var(--ink-muted); font-size: 0.82rem; font-weight: 700; border: 1px dashed var(--border); border-radius: var(--radius); background: #fff; }
+        .element-row { display: grid; grid-template-columns: 32px 126px 42px; justify-content: space-between; align-items: center; gap: 0; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; box-shadow: var(--shadow-control); transition: border-color 0.18s ease, background 0.18s ease; }
+        .element-row:hover { border-color: var(--border-strong); background: #f8fafc; }
+        .element-symbol { width: 32px; text-align: center; color: var(--ink); font-size: 1.05rem; font-weight: 850; }
+        .element-radius-control { display: flex; align-items: center; gap: 6px; width: 126px; }
+        .element-radius-control label { color: var(--ink-muted); font-size: 0.72rem; font-weight: 800; }
+        .element-radius-input { width: 100%; min-height: 32px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--ink); font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem; font-weight: 650; outline: none; transition: border-color 0.18s ease, box-shadow 0.18s ease; }
+        .element-radius-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+        .light-card { background: #fff !important; border-color: var(--border) !important; border-radius: var(--radius) !important; }
+        .light-target { width: 78px; height: 78px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.82), var(--shadow-control); cursor: crosshair; }
+        #light-canvas { width: 72px; height: 72px; display: block; }
+        :where(button, input, select, summary):focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+        label:has(input[type="radio"]:focus-visible), label:has(input[type="checkbox"]:focus-visible) { outline: 3px solid var(--ring); outline-offset: 3px; border-radius: 7px; }
+        input[type="radio"], input[type="checkbox"] { accent-color: var(--primary); }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.001ms !important; }
+        }
+        @media (max-width: 1100px) {
+            #canvas-container { top: 18px; left: 18px; right: 18px; bottom: 18px; }
+            #ui-container { top: 18px; left: 18px; right: auto; height: calc(100vh - 36px); }
+            #axis-widget { right: 36px; left: auto; bottom: 26px; }
+        }
+        @media (max-width: 760px) {
+            #canvas-container { top: 12px; left: 12px; right: 12px; bottom: 12px; }
+            #ui-container { left: 12px; right: 12px; bottom: 12px; top: auto; width: auto; height: 44vh; }
+            #axis-widget { right: 24px; bottom: calc(44vh + 28px); width: 88px; height: 88px; }
+        }
+    </style>
+
+    <!-- Three.js import map -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "../vendor/three/0.160.0/build/three.module.js",
+                "three/addons/": "../vendor/three/0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="file-protocol-warning" role="alert">
+        <div class="file-warning-card">
+            <div class="file-warning-title">Please start Quick Crystal through the local server launcher.</div>
+            <div class="file-warning-copy">
+                This app now uses local JavaScript modules. Browsers block those modules when opened with a direct file path, so the 3D model cannot initialize from <span class="help-key">file://</span>.
+            </div>
+            <code class="file-warning-path">Double-click: Open Quick Crystal.bat</code>
+        </div>
+    </div>
+    <script>
+        if (window.location.protocol === 'file:') {
+            window.addEventListener('DOMContentLoaded', () => {
+                document.getElementById('file-protocol-warning')?.classList.add('is-open');
+            });
+        }
+    </script>
+
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="mt-4 font-bold text-lg">Loading...</div>
+    </div>
+
+    <div id="canvas-container"></div>
+    <input type="file" id="file-input" accept=".cif,.vesta,.vasp,POSCAR" class="hidden">
+
+    <svg id="axis-widget" viewBox="0 0 116 116" aria-hidden="true">
+        <circle class="axis-rim" cx="58" cy="58" r="46"></circle>
+        <g id="axis-x"><line class="axis-back"></line><line class="axis-line" stroke="#dc2626"></line><circle class="axis-dot" r="4" fill="#dc2626"></circle><text class="axis-label" fill="#dc2626">X</text></g>
+        <g id="axis-y"><line class="axis-back"></line><line class="axis-line" stroke="#16a34a"></line><circle class="axis-dot" r="4" fill="#16a34a"></circle><text class="axis-label" fill="#16a34a">Y</text></g>
+        <g id="axis-z"><line class="axis-back"></line><line class="axis-line" stroke="#2563eb"></line><circle class="axis-dot" r="4" fill="#2563eb"></circle><text class="axis-label" fill="#2563eb">Z</text></g>
+        <circle class="axis-origin" cx="58" cy="58" r="4"></circle>
+    </svg>
+
+    <div id="ui-container">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title"><i class="ph ph-cube text-lg"></i> Quick Crystal</div>
+            </div>
+            <div class="panel-actions">
+                <button type="button" id="btn-help" class="help-button" aria-expanded="false" aria-controls="help-popover" title="Help">
+                    <i class="ph ph-question text-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="help-popover" class="help-popover">
+            <div class="help-popover-header">
+                <div>Controls</div>
+                <span>Quick guide</span>
+            </div>
+            <div class="help-list">
+                <div class="help-row">
+                    <span class="help-icon"><i class="ph ph-cursor-click"></i></span>
+                    <div>
+                        <div class="help-row-title">Navigate</div>
+                        <div class="help-row-copy"><span class="help-key">Left drag</span> rotate, <span class="help-key">Right drag</span> pan, wheel zoom</div>
+                    </div>
+                </div>
+                <div class="help-row">
+                    <span class="help-icon"><i class="ph ph-arrows-out-cardinal"></i></span>
+                    <div>
+                        <div class="help-row-title">Views</div>
+                        <div class="help-row-copy"><span class="help-key">X</span> <span class="help-key">Y</span> <span class="help-key">Z</span> jump to orthographic views</div>
+                    </div>
+                </div>
+                <div class="help-row">
+                    <span class="help-icon"><i class="ph ph-link-break"></i></span>
+                    <div>
+                        <div class="help-row-title">Bonds</div>
+                        <div class="help-row-copy">Click a bond, then press <span class="help-key">Delete</span> or <span class="help-key">Backspace</span></div>
+                    </div>
+                </div>
+                <div class="help-row">
+                    <span class="help-icon"><i class="ph ph-circles-three-plus"></i></span>
+                    <div>
+                        <div class="help-row-title">Export Atoms</div>
+                        <div class="help-row-copy">Use Export &gt; Export Atoms to batch save isolated atom renders for each element</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="inspector-section open-section">
+            <button type="button" class="sidebar-action" id="btn-open-file">
+                <i class="ph ph-upload-simple text-lg"></i> Open ( CIF / Vesta / POSCAR )
+            </button>
+        </div>
+
+        <details class="inspector-section">
+            <summary>View</summary>
+            <div class="inspector-body">
+                <div class="tool-card view-mode-panel is-active" id="view-mode-xyz-panel">
+                    <div class="view-card-header">
+                        <span class="section-subtitle">xyz rotation (deg)</span>
+                        <div class="view-card-actions">
+                            <button type="button" id="btn-view-mode-hkl" class="view-icon-button" aria-label="Switch to hkl normal" title="Switch to hkl normal" aria-controls="view-mode-hkl-panel">
+                                <i class="ph ph-swap"></i>
+                            </button>
+                            <button type="button" id="btn-view-xyz" class="view-icon-button" aria-label="Reaccess xyz view" title="Reaccess xyz view">
+                                <i class="ph ph-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="panel-grid-3">
+                        <div>
+                            <label class="panel-field-label">x</label>
+                            <input type="number" id="view-x" step="1" value="0" class="panel-number">
+                        </div>
+                        <div>
+                            <label class="panel-field-label">y</label>
+                            <input type="number" id="view-y" step="1" value="0" class="panel-number">
+                        </div>
+                        <div>
+                            <label class="panel-field-label">z</label>
+                            <input type="number" id="view-z" step="1" value="0" class="panel-number">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tool-card view-mode-panel" id="view-mode-hkl-panel">
+                    <div class="view-card-header">
+                        <span class="section-subtitle">hkl normal</span>
+                        <div class="view-card-actions">
+                            <button type="button" id="btn-view-mode-xyz" class="view-icon-button" aria-label="Switch to xyz rotation" title="Switch to xyz rotation" aria-controls="view-mode-xyz-panel">
+                                <i class="ph ph-swap"></i>
+                            </button>
+                            <button type="button" id="btn-view-hkl" class="view-icon-button" aria-label="Refresh hkl view" title="Refresh hkl view">
+                                <i class="ph ph-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="panel-grid-3">
+                        <div>
+                            <label class="panel-field-label">h</label>
+                            <input type="number" id="view-h" step="1" value="1" class="panel-number">
+                        </div>
+                        <div>
+                            <label class="panel-field-label">k</label>
+                            <input type="number" id="view-k" step="1" value="0" class="panel-number">
+                        </div>
+                        <div>
+                            <label class="panel-field-label">l</label>
+                            <input type="number" id="view-l" step="1" value="0" class="panel-number">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </details>
+
+        <details class="inspector-section">
+            <summary>Structure</summary>
+            <div class="inspector-body">
+                <div class="tool-card">
+                    <label class="flex items-center justify-between gap-3 cursor-pointer mb-3">
+                        <span class="text-sm font-medium">Unit cell</span>
+                        <input type="checkbox" id="show-cell" class="w-5 h-5 accent-black" checked>
+                    </label>
+                    <span class="section-subtitle">Supercell preview</span>
+                    <div class="panel-grid-3">
+                        <div>
+                            <label class="panel-field-label">X</label>
+                            <input type="number" id="supercell-x" min="1" max="8" step="1" value="1" class="panel-number">
+                        </div>
+                        <div>
+                            <label class="panel-field-label">Y</label>
+                            <input type="number" id="supercell-y" min="1" max="8" step="1" value="1" class="panel-number">
+                        </div>
+                        <div>
+                            <label class="panel-field-label">Z</label>
+                            <input type="number" id="supercell-z" min="1" max="8" step="1" value="1" class="panel-number">
+                        </div>
+                    </div>
+                    <div id="structure-stats" class="mt-3 text-xs font-semibold text-gray-600 leading-relaxed">No structure loaded</div>
+                </div>
+            </div>
+        </details>
+
+        <details class="inspector-section">
+            <summary>Elements</summary>
+            <div class="inspector-body">
+                <div class="control-group">
+                    <label class="control-label">Element colors and bonding radii</label>
+                    <div id="dynamic-elements-ui" class="space-y-2 max-h-48 overflow-y-auto p-1">
+                        <!-- Dynamic element controls will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details class="inspector-section">
+            <summary>Appearance</summary>
+            <div class="inspector-body">
+                <div class="control-group control-inline">
+                    <label class="control-label">
+                        <span>Atom radius</span>
+                    </label>
+                    <input type="number" id="atom-size" min="0" max="1" step="0.01" value="0.30" class="control-number">
+                </div>
+
+                <div class="control-group control-inline">
+                    <label class="control-label">
+                        <span>Bond radius</span>
+                    </label>
+                    <input type="number" id="bond-size" min="0" max="1" step="0.01" value="0.30" class="control-number">
+                </div>
+
+                <div class="control-group control-inline">
+                    <label class="control-label">
+                        <span>Bond tolerance</span>
+                    </label>
+                    <input type="number" id="bond-tol" min="0" max="1" step="0.01" value="0.50" class="control-number">
+                </div>
+
+                <div class="control-group control-inline">
+                    <label class="control-label">
+                        <span>Outline width</span>
+                    </label>
+                    <input type="number" id="outline-size" min="0" max="1" step="0.01" value="0.30" class="control-number">
+                </div>
+
+                <input type="hidden" id="bg-color" value="#ffffff">
+
+            </div>
+        </details>
+
+        <details class="inspector-section">
+            <summary>Lighting</summary>
+            <div class="inspector-body">
+                <div class="light-card flex items-center gap-3 bg-white p-2 border border-gray-200 rounded-lg">
+                    <div class="light-target shrink-0" title="Drag to adjust light direction">
+                        <canvas id="light-canvas" width="72" height="72" aria-label="Light direction control"></canvas>
+                    </div>
+                    <div class="flex-1 space-y-3">
+                        <div class="control-inline">
+                            <label class="text-xs font-bold text-gray-500">Key light</label>
+                            <input type="number" id="light-intensity" min="0" max="1" step="0.01" value="0.40" class="control-number">
+                        </div>
+                        <div class="control-inline">
+                            <label class="text-xs font-bold text-gray-500">Ambient light</label>
+                            <input type="number" id="ambient-intensity" min="0" max="1" step="0.01" value="0.50" class="control-number">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details class="inspector-section">
+            <summary>Export</summary>
+            <div class="inspector-body">
+                <div class="control-group export-actions">
+                    <button type="button" class="sidebar-action primary" id="btn-export">
+                        <i class="ph ph-camera text-lg"></i> Export PNG
+                    </button>
+                    <button type="button" class="sidebar-action" id="btn-export-elements">
+                        <i class="ph ph-circles-three-plus text-lg"></i> Export Atoms
+                    </button>
+                </div>
+            </div>
+        </details>
+    </div>
+
+    <div id="export-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="export-modal-title">
+        <div class="export-dialog">
+            <div class="export-dialog-header">
+                <div id="export-modal-title">Export PNG</div>
+                <button type="button" id="export-modal-close" class="export-dialog-close" aria-label="Close export dialog">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <div class="export-dialog-body">
+                <label class="export-dialog-row">
+                    <span>Scale</span>
+                    <input type="number" id="export-scale" min="1" max="4" step="1" value="2" class="control-number">
+                </label>
+                <label class="export-dialog-check">
+                    <input type="checkbox" id="bg-transparent" class="w-4 h-4 accent-black border border-gray-300 rounded cursor-pointer">
+                    <span>Transparent background</span>
+                </label>
+            </div>
+            <div class="export-dialog-footer">
+                <button type="button" id="export-modal-cancel" class="sidebar-action">Cancel</button>
+                <button type="button" id="export-modal-ok" class="sidebar-action primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main logic -->
+    <script>
+        if (window.location.protocol !== 'file:') {
+            const appScript = document.createElement('script');
+            appScript.type = 'module';
+            appScript.src = './app.js';
+            document.body.appendChild(appScript);
+        }
+    </script>
+</body>
+</html>
+
+
