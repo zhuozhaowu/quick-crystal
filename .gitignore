@@ -1,5 +1,7 @@
 node_modules/
 work/
+dist/
+.quick-crystal-server.json
 .DS_Store
 Thumbs.db
 npm-debug.log*

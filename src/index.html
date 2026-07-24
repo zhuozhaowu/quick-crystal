@@ -86,6 +86,8 @@
         .axis-button:hover { background: #eff6ff; border-color: #93b6e8; color: var(--primary); }
         .axis-button:active { transform: translateY(1px); }
         .section-subtitle { display: block; margin-bottom: 8px; color: var(--ink-soft); font-size: 0.82rem; font-weight: 800; }
+        .structure-label { color: var(--ink-soft); font-size: 0.82rem; font-weight: 800; line-height: 1.25; }
+        .structure-label.is-block { display: block; margin-bottom: 8px; }
         .panel-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
         .panel-field-label { display: block; color: var(--ink-muted); font-size: 0.72rem; font-weight: 800; margin-bottom: 5px; }
         .radio-stack { display: grid; gap: 8px; }
@@ -214,7 +216,7 @@
             <div class="file-warning-copy">
                 This app now uses local JavaScript modules. Browsers block those modules when opened with a direct file path, so the 3D model cannot initialize from <span class="help-key">file://</span>.
             </div>
-            <code class="file-warning-path">Double-click: Open Quick Crystal.bat</code>
+            <code class="file-warning-path">Double-click: Quick Crystal.vbs</code>
         </div>
     </div>
     <script>
@@ -263,7 +265,7 @@
                     <span class="help-icon"><i class="ph ph-cursor-click"></i></span>
                     <div>
                         <div class="help-row-title">Navigate</div>
-                        <div class="help-row-copy"><span class="help-key">Left drag</span> rotate, <span class="help-key">Right drag</span> pan, wheel zoom</div>
+                        <div class="help-row-copy"><span class="help-key">Left drag</span> rotate, <span class="help-key">Right drag</span> pan, <span class="help-key">Wheel up/down</span> zoom</div>
                     </div>
                 </div>
                 <div class="help-row">
@@ -278,6 +280,13 @@
                     <div>
                         <div class="help-row-title">Bonds</div>
                         <div class="help-row-copy">Click a bond, then press <span class="help-key">Delete</span> or <span class="help-key">Backspace</span></div>
+                    </div>
+                </div>
+                <div class="help-row">
+                    <span class="help-icon"><i class="ph ph-atom"></i></span>
+                    <div>
+                        <div class="help-row-title">Atoms</div>
+                        <div class="help-row-copy">Click an atom, then press <span class="help-key">Delete</span> or <span class="help-key">Backspace</span></div>
                     </div>
                 </div>
                 <div class="help-row">
@@ -363,10 +372,10 @@
             <div class="inspector-body">
                 <div class="tool-card">
                     <label class="flex items-center justify-between gap-3 cursor-pointer mb-3">
-                        <span class="text-sm font-medium">Unit cell</span>
+                        <span class="structure-label">Unit cell</span>
                         <input type="checkbox" id="show-cell" class="w-5 h-5 accent-black" checked>
                     </label>
-                    <span class="section-subtitle">Supercell preview</span>
+                    <span class="structure-label is-block">Supercell preview</span>
                     <div class="panel-grid-3">
                         <div>
                             <label class="panel-field-label">X</label>
@@ -405,14 +414,14 @@
                     <label class="control-label">
                         <span>Atom radius</span>
                     </label>
-                    <input type="number" id="atom-size" min="0" max="1" step="0.01" value="0.30" class="control-number">
+                    <input type="number" id="atom-size" min="0" max="1" step="0.01" value="0.25" class="control-number">
                 </div>
 
                 <div class="control-group control-inline">
                     <label class="control-label">
                         <span>Bond radius</span>
                     </label>
-                    <input type="number" id="bond-size" min="0" max="1" step="0.01" value="0.30" class="control-number">
+                    <input type="number" id="bond-size" min="0" max="1" step="0.01" value="0.10" class="control-number">
                 </div>
 
                 <div class="control-group control-inline">
@@ -449,6 +458,10 @@
                         <div class="control-inline">
                             <label class="text-xs font-bold text-gray-500">Ambient light</label>
                             <input type="number" id="ambient-intensity" min="0" max="1" step="0.01" value="0.50" class="control-number">
+                        </div>
+                        <div class="control-inline">
+                            <label class="text-xs font-bold text-gray-500">Highlight size</label>
+                            <input type="number" id="highlight-size" min="0" max="1" step="0.01" value="0.50" class="control-number">
                         </div>
                     </div>
                 </div>
@@ -506,5 +519,3 @@
     </script>
 </body>
 </html>
-
-

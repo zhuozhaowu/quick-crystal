@@ -5,6 +5,7 @@ import {
     ColorPalette,
     ElementData,
     NormalizedControls,
+    OrderedElementDefaultColors,
     RegexPatterns,
     RenderConfig,
     SupercellInputIds,
@@ -30,6 +31,7 @@ let cellGroup = new THREE.Group();
 let baseAtomsData = [];
 let currentAtomsData = []; 
 let currentBondsData = [];
+let currentWeakBondsData = [];
 let currentCell = null;
 let baseCell = null;
 let modelCenter = new THREE.Vector3();
@@ -39,7 +41,15 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let selectedBondIndex = null;
 let selectedBondMeshes = [];
+let selectedAtomIndex = null;
+let selectedAtomMesh = null;
 let activeColorPickerAnchor = null;
+const modelDragStart = new THREE.Vector2();
+const modelDragLast = new THREE.Vector2();
+let isModelDragActive = false;
+const WeakBondDonors = new Set(['H', 'D']);
+const WeakBondAcceptors = new Set(['O']);
+const WeakBondDistance = { min: 1.2, max: 2.1 };
 
 function canonicalElement(symbol) {
     const raw = String(symbol || '').replace(RegexPatterns.quoteWrap, '').trim();
@@ -98,7 +108,8 @@ function cloneAtom(atom) {
     return {
         element: canonicalElement(atom.element),
         pos: atom.pos.clone(),
-        frac: atom.frac ? atom.frac.clone() : null
+        frac: atom.frac ? atom.frac.clone() : null,
+        sourceAtomIndex: Number.isInteger(atom.sourceAtomIndex) ? atom.sourceAtomIndex : null
     };
 }
 
@@ -130,7 +141,7 @@ function getControlActualValue(id) {
     const input = UI.get(id);
     if (!range) return parseFloat(input?.value || '0');
     const fallback = actualToNormalized(id, range.defaultActual);
-    const normalized = input?.value === '' ? fallback : clampNormalized(input?.value);
+    const normalized = !input || input.value === '' ? fallback : clampNormalized(input.value);
     return normalizedToActual(id, normalized);
 }
 
@@ -496,7 +507,10 @@ function openColorPicker(anchor, initialHex, onApply) {
 }
 
 function normalizeStructureOrigin() {
-    if (currentAtomsData.length === 0) return;
+    if (currentAtomsData.length === 0) {
+        modelCenter.set(0, 0, 0);
+        return;
+    }
     const box = new THREE.Box3().setFromPoints(currentAtomsData.map(atom => atom.pos));
     modelCenter = box.getCenter(new THREE.Vector3());
     for (const atom of currentAtomsData) atom.pos.sub(modelCenter);
@@ -520,9 +534,13 @@ function getSupercellDims() {
 function applySupercell() {
     const dims = getSupercellDims();
     currentBondsData = [];
+    currentWeakBondsData = [];
     if (!baseCell || baseAtomsData.length === 0 || baseAtomsData.some(a => !a.frac)) {
         currentCell = baseCell;
-        currentAtomsData = baseAtomsData.map(cloneAtom);
+        currentAtomsData = baseAtomsData.map((atom, sourceAtomIndex) => ({
+            ...cloneAtom(atom),
+            sourceAtomIndex
+        }));
         normalizeStructureOrigin();
         return;
     }
@@ -537,7 +555,7 @@ function applySupercell() {
     for (let ix = 0; ix < dims.x; ix++) {
         for (let iy = 0; iy < dims.y; iy++) {
             for (let iz = 0; iz < dims.z; iz++) {
-                baseAtomsData.forEach(atom => {
+                baseAtomsData.forEach((atom, sourceAtomIndex) => {
                     const frac = new THREE.Vector3(
                         (atom.frac.x + ix) / dims.x,
                         (atom.frac.y + iy) / dims.y,
@@ -546,7 +564,8 @@ function applySupercell() {
                     currentAtomsData.push({
                         element: atom.element,
                         frac,
-                        pos: currentCell.fracToCart(frac)
+                        pos: currentCell.fracToCart(frac),
+                        sourceAtomIndex
                     });
                 });
             }
@@ -559,7 +578,28 @@ function updateStructureStats() {
     const stats = UI.get('structure-stats');
     if (!stats) return;
     const elements = [...new Set(currentAtomsData.map(a => canonicalElement(a.element)))].sort().join(', ');
-    stats.textContent = `${currentAtomsData.length} atoms | ${currentBondsData.length} bonds${elements ? ` | ${elements}` : ''}`;
+    const weakBondText = currentWeakBondsData.length ? ` | ${currentWeakBondsData.length} dashed` : '';
+    stats.textContent = `${currentAtomsData.length} atoms | ${currentBondsData.length} bonds${weakBondText}${elements ? ` | ${elements}` : ''}`;
+}
+
+function ensureElementRenderingData(element) {
+    const el = canonicalElement(element);
+    if (!ElementData[el]) ElementData[el] = { ...ElementData.default };
+    return ElementData[el];
+}
+
+function applyOrderedElementDefaultColors(atoms) {
+    const seenElements = new Set();
+    for (const atom of atoms) {
+        const el = canonicalElement(atom.element);
+        if (!el || seenElements.has(el)) continue;
+
+        const color = OrderedElementDefaultColors[seenElements.size];
+        if (color === undefined) return;
+
+        ensureElementRenderingData(el).color = color;
+        seenElements.add(el);
+    }
 }
 
 function rebuildElementEditor() {
@@ -576,8 +616,7 @@ function rebuildElementEditor() {
     }
 
     uniqueElements.forEach(el => {
-        if (!ElementData[el]) ElementData[el] = { ...ElementData['default'] };
-        const data = ElementData[el];
+        const data = ensureElementRenderingData(el);
         const hexColor = "#" + data.color.toString(16).padStart(6, '0');
 
         const row = document.createElement('div');
@@ -657,8 +696,8 @@ function bootCrystalWorkbench() {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.enableRotate = true;
-    // Native OrbitControls handle free rotation, right-drag panning, and wheel zoom.
+    controls.enableRotate = false;
+    // Left-drag rotates the model groups around the origin; OrbitControls keep right-drag panning and wheel zoom.
     controls.autoRotate = false;
     controls.autoRotateSpeed = 2.0;
 
@@ -677,7 +716,7 @@ function bootCrystalWorkbench() {
 function buildOutlinedAtomMaterial(colorHex) {
     const material = new THREE.MeshPhongMaterial({
         color: new THREE.Color(colorHex),
-        shininess: RenderConfig.atomMaterial.shininess,
+        shininess: getControlActualValue('highlight-size') || RenderConfig.atomMaterial.shininess,
         specular: RenderConfig.atomMaterial.specular
     });
     applyOutlineThicknessToMaterial(material, getOutlineThickness());
@@ -698,6 +737,9 @@ function clearRenderedGroups() {
     disposeCollectedResources(geometries, materials);
     selectedBondMeshes = [];
     selectedBondIndex = null;
+    selectedAtomMesh = null;
+    selectedAtomIndex = null;
+    syncSelectionUi();
 }
 
 function renderUnitCell() {
@@ -745,10 +787,11 @@ function createRenderCaches(atomScale) {
     return { atomScale, styleFor, materialFor };
 }
 
-function makeAtomGlyph(atom, sphereGeometry, caches) {
+function makeAtomGlyph(atom, atomIndex, sphereGeometry, caches) {
     const mesh = new THREE.Mesh(sphereGeometry, caches.materialFor(atom.element));
     mesh.position.copy(atom.pos);
     mesh.scale.setScalar(caches.styleFor(atom.element).radius * caches.atomScale);
+    mesh.userData = { isAtom: true, atomIndex };
     return mesh;
 }
 
@@ -764,6 +807,27 @@ function addBondHalf({ from, to, colorElement, splitStart, splitEnd, radius, cyl
     bondsGroup.add(mesh);
 }
 
+function addWeakBondDashes({ from, to, radius, cylinderGeometry, material, quaternion, index }) {
+    const length = from.distanceTo(to);
+    if (length <= 1e-8) return;
+
+    const dashLength = 0.16;
+    const gapLength = 0.12;
+    for (let cursor = 0; cursor < length; cursor += dashLength + gapLength) {
+        const segmentStart = cursor / length;
+        const segmentEnd = Math.min(cursor + dashLength, length) / length;
+        const segmentLength = length * (segmentEnd - segmentStart);
+        if (segmentLength <= 1e-8) continue;
+
+        const mesh = new THREE.Mesh(cylinderGeometry, material);
+        mesh.position.copy(from).lerp(to, (segmentStart + segmentEnd) / 2);
+        mesh.scale.set(radius, segmentLength, radius);
+        mesh.quaternion.copy(quaternion);
+        mesh.userData = { isWeakBond: true, weakBondIndex: index };
+        bondsGroup.add(mesh);
+    }
+}
+
 function rebuildSceneGraph() {
     clearRenderedGroups();
     const atomScale = getControlActualValue('atom-size');
@@ -772,8 +836,9 @@ function rebuildSceneGraph() {
     const cylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 32);
     const caches = createRenderCaches(atomScale);
     const unitY = new THREE.Vector3(0, 1, 0);
+    let weakBondMaterial = null;
 
-    for (const atom of currentAtomsData) atomsGroup.add(makeAtomGlyph(atom, sphereGeo, caches));
+    currentAtomsData.forEach((atom, index) => atomsGroup.add(makeAtomGlyph(atom, index, sphereGeo, caches)));
     currentBondsData.forEach((bond, index) => {
         const atom1 = currentAtomsData[bond.i];
         const atom2 = currentAtomsData[bond.j];
@@ -816,6 +881,40 @@ function rebuildSceneGraph() {
         });
     });
 
+    const weakBondRadius = Math.max(0.018, Math.min(0.045, bondRadius * 0.45));
+    currentWeakBondsData.forEach((bond, index) => {
+        if (!weakBondMaterial) {
+            weakBondMaterial = new THREE.MeshPhongMaterial({
+                color: 0x8f949c,
+                shininess: 80,
+                specular: 0xffffff
+            });
+            weakBondMaterial.userData.outlineParameters = { visible: false, keepAlive: true };
+        }
+        const atom1 = currentAtomsData[bond.i];
+        const atom2 = currentAtomsData[bond.j];
+        if (!atom1 || !atom2) return;
+
+        const start = atom1.pos;
+        const periodicOffset = bond.offset && currentCell
+            ? currentCell.offsetToCart(new THREE.Vector3(...bond.offset))
+            : new THREE.Vector3();
+        const end = atom2.pos.clone().add(periodicOffset);
+        const direction = end.clone().sub(start);
+        if (direction.lengthSq() < 1e-12) return;
+
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(unitY, direction.normalize());
+        addWeakBondDashes({
+            from: start,
+            to: end,
+            radius: weakBondRadius,
+            cylinderGeometry: cylinderGeo,
+            material: weakBondMaterial,
+            quaternion,
+            index
+        });
+    });
+
     renderUnitCell();
     updateStructureStats();
 }
@@ -827,8 +926,19 @@ function getBondVector(atomA, atomB) {
     };
 }
 
+function isWeakHydrogenBondPair(atomA, atomB, distance) {
+    const elementA = canonicalElement(atomA.element);
+    const elementB = canonicalElement(atomB.element);
+    const hasHydrogenAcceptorPair = (WeakBondDonors.has(elementA) && WeakBondAcceptors.has(elementB))
+        || (WeakBondDonors.has(elementB) && WeakBondAcceptors.has(elementA));
+    return hasHydrogenAcceptorPair
+        && distance >= WeakBondDistance.min
+        && distance <= WeakBondDistance.max;
+}
+
 function refreshBondTopology() {
     currentBondsData = [];
+    currentWeakBondsData = [];
     const tolerance = getControlActualValue('bond-tol');
     const minDistance = 0.4;
 
@@ -838,8 +948,13 @@ function refreshBondTopology() {
             const atomB = currentAtomsData[j];
             const cutoff = (styleA.radius + resolveElementRenderingDefaults(atomB.element).radius) * tolerance;
             const candidate = getBondVector(atomA, atomB);
-            if (candidate.distance <= minDistance || candidate.distance >= cutoff) continue;
-            currentBondsData.push({ i, j, offset: candidate.offset });
+            if (candidate.distance > minDistance && candidate.distance < cutoff) {
+                currentBondsData.push({ i, j, offset: candidate.offset });
+                continue;
+            }
+            if (isWeakHydrogenBondPair(atomA, atomB, candidate.distance)) {
+                currentWeakBondsData.push({ i, j, offset: candidate.offset });
+            }
         }
     });
     updateStructureStats();
@@ -1109,6 +1224,16 @@ function rotateModel(axis, angle) {
     atomsGroup.quaternion.premultiply(q);
     bondsGroup.quaternion.premultiply(q);
     cellGroup.quaternion.premultiply(q);
+}
+
+function rotateModelFromPointerDelta(deltaX, deltaY) {
+    if (!camera || (deltaX === 0 && deltaY === 0)) return;
+    const sensitivity = 0.008;
+    const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    const cameraUp = camera.up.clone().normalize();
+
+    rotateModel(cameraUp, deltaX * sensitivity);
+    rotateModel(cameraRight, deltaY * sensitivity);
 }
 
 function setCameraFromDirection(direction, preferredUp = new THREE.Vector3(0, 0, 1), rollDeg = 0) {
@@ -1709,6 +1834,7 @@ function bindLightControls() {
     renderLightPad();
     bindNormalizedInput('light-intensity', syncMainLighting);
     bindNormalizedInput('ambient-intensity', syncMainLighting);
+    bindNormalizedInput('highlight-size', rebuildSceneGraph);
     lightCanvas.addEventListener('mousedown', updateLightDirectionFromPointer);
     lightCanvas.addEventListener('mousemove', updateLightDirectionFromPointer);
 }
@@ -1721,7 +1847,17 @@ function clearBondSelection() {
     selectedBondIndex = null;
 }
 
+function clearAtomSelection() {
+    if (selectedAtomMesh?.userData.originalMaterial) {
+        selectedAtomMesh.material = selectedAtomMesh.userData.originalMaterial;
+    }
+    selectedAtomMesh = null;
+    selectedAtomIndex = null;
+    syncSelectionUi();
+}
+
 function selectBondByIndex(bondIndex) {
+    clearAtomSelection();
     selectedBondIndex = bondIndex;
     bondsGroup.children.forEach(mesh => {
         if (mesh.userData.bondIndex !== selectedBondIndex) return;
@@ -1732,43 +1868,152 @@ function selectBondByIndex(bondIndex) {
     });
 }
 
+function selectAtomByIndex(atomIndex) {
+    clearBondSelection();
+    selectedAtomIndex = atomIndex;
+    selectedAtomMesh = atomsGroup.children.find(mesh => mesh.userData.atomIndex === selectedAtomIndex) || null;
+    if (!selectedAtomMesh) {
+        syncSelectionUi();
+        return;
+    }
+
+    selectedAtomMesh.userData.originalMaterial = selectedAtomMesh.material;
+    selectedAtomMesh.material = selectedAtomMesh.material.clone();
+    selectedAtomMesh.material.emissive.setHex(0xaa3333);
+    syncSelectionUi();
+}
+
+function syncSelectionUi() {
+    // Selection is intentionally keyboard-driven: click an atom, then press Delete or Backspace.
+}
+
+function removeCurrentAtomIndexes(atomIndexes) {
+    const indexesToRemove = new Set(atomIndexes);
+    const indexMap = new Map();
+    const nextAtoms = [];
+
+    currentAtomsData.forEach((atom, index) => {
+        if (indexesToRemove.has(index)) return;
+        indexMap.set(index, nextAtoms.length);
+        nextAtoms.push(atom);
+    });
+
+    currentAtomsData = nextAtoms;
+    currentBondsData = currentBondsData
+        .filter(bond => indexMap.has(bond.i) && indexMap.has(bond.j))
+        .map(bond => ({
+            ...bond,
+            i: indexMap.get(bond.i),
+            j: indexMap.get(bond.j)
+        }));
+    currentWeakBondsData = currentWeakBondsData
+        .filter(bond => indexMap.has(bond.i) && indexMap.has(bond.j))
+        .map(bond => ({
+            ...bond,
+            i: indexMap.get(bond.i),
+            j: indexMap.get(bond.j)
+        }));
+}
+
+function deleteSelectedAtom() {
+    if (selectedAtomIndex === null) return false;
+    const selectedAtom = currentAtomsData[selectedAtomIndex];
+    if (!selectedAtom) {
+        clearAtomSelection();
+        return false;
+    }
+
+    const sourceAtomIndex = selectedAtom.sourceAtomIndex;
+    const hasBaseSource = Number.isInteger(sourceAtomIndex)
+        && sourceAtomIndex >= 0
+        && sourceAtomIndex < baseAtomsData.length;
+    const atomIndexesToDelete = hasBaseSource
+        ? currentAtomsData
+            .map((atom, index) => atom.sourceAtomIndex === sourceAtomIndex ? index : null)
+            .filter(index => index !== null)
+        : [selectedAtomIndex];
+
+    removeCurrentAtomIndexes(atomIndexesToDelete);
+
+    if (hasBaseSource) {
+        baseAtomsData.splice(sourceAtomIndex, 1);
+        currentAtomsData.forEach(atom => {
+            if (Number.isInteger(atom.sourceAtomIndex) && atom.sourceAtomIndex > sourceAtomIndex) {
+                atom.sourceAtomIndex -= 1;
+            }
+        });
+    }
+
+    clearAtomSelection();
+    clearBondSelection();
+    rebuildElementEditor();
+    rebuildSceneGraph();
+    return true;
+}
+
 function bindBondPicking() {
     const mouseDownPos = new THREE.Vector2();
     const pointerUpPos = new THREE.Vector2();
 
     renderer.domElement.addEventListener('pointerdown', (e) => {
         mouseDownPos.set(e.clientX, e.clientY);
+        if (e.button !== 0) return;
+        isModelDragActive = true;
+        modelDragStart.set(e.clientX, e.clientY);
+        modelDragLast.copy(modelDragStart);
+        renderer.domElement.setPointerCapture?.(e.pointerId);
+    });
+
+    renderer.domElement.addEventListener('pointermove', (e) => {
+        if (!isModelDragActive || e.buttons !== 1) return;
+        const deltaX = e.clientX - modelDragLast.x;
+        const deltaY = e.clientY - modelDragLast.y;
+        modelDragLast.set(e.clientX, e.clientY);
+        rotateModelFromPointerDelta(deltaX, deltaY);
+        e.preventDefault();
     });
 
     renderer.domElement.addEventListener('pointerup', (e) => {
         pointerUpPos.set(e.clientX, e.clientY);
-        if (mouseDownPos.distanceTo(pointerUpPos) > 5) return;
+        const wasModelDragActive = isModelDragActive;
+        isModelDragActive = false;
+        renderer.domElement.releasePointerCapture?.(e.pointerId);
+        if (mouseDownPos.distanceTo(pointerUpPos) > 5 || (wasModelDragActive && modelDragStart.distanceTo(pointerUpPos) > 5)) return;
 
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(bondsGroup.children);
+        const intersects = raycaster.intersectObjects([...atomsGroup.children, ...bondsGroup.children]);
+        clearAtomSelection();
         clearBondSelection();
 
         if (intersects.length === 0) return;
         const object = intersects[0].object;
+        if (object.userData.isAtom) selectAtomByIndex(object.userData.atomIndex);
         if (object.userData.isBond) selectBondByIndex(object.userData.bondIndex);
     });
 
     renderer.domElement.addEventListener('pointercancel', () => {
         mouseDownPos.set(-9999, -9999);
+        isModelDragActive = false;
     });
 }
 
 function bindDeletionShortcut() {
     window.addEventListener('keydown', (e) => {
         if (isEditingTarget(e.target)) return;
-        if ((e.key !== 'Delete' && e.key !== 'Backspace') || selectedBondIndex === null) return;
+        if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+        if (deleteSelectedAtom()) {
+            e.preventDefault();
+            return;
+        }
+        if (selectedBondIndex === null) return;
         currentBondsData.splice(selectedBondIndex, 1);
         clearBondSelection();
         rebuildSceneGraph();
+        e.preventDefault();
     });
 }
 
@@ -1786,6 +2031,7 @@ function bindFileControls() {
                 baseCell = null;
                 currentCell = null;
                 baseAtomsData = parseStructureFile(file.name, event.target.result);
+                applyOrderedElementDefaultColors(baseAtomsData);
                 resetLoadedStructureControls();
                 refreshStructureAfterDataChange({ updateElements: true, resetView: true });
             } catch (err) {
@@ -1956,6 +2202,7 @@ function seedDemoStructure() {
             pos: baseCell.fracToCart(frac)
         };
     });
+    applyOrderedElementDefaultColors(baseAtomsData);
     applySupercell();
     rebuildElementEditor(); 
     refreshBondTopology();
@@ -1964,5 +2211,3 @@ function seedDemoStructure() {
 }
 
 bootCrystalWorkbench();
-
-

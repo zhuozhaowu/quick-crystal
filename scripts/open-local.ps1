@@ -1,6 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
+$rootFullPath = [System.IO.Path]::GetFullPath($root).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar
+)
+$serverMarkerName = ".quick-crystal-server.json"
 $preferredPort = 8765
 
 function Test-PortAvailable {
@@ -61,8 +66,61 @@ function Wait-ServerReady {
     return $false
 }
 
+function Write-ServerMarker {
+    $markerPath = Join-Path $root $serverMarkerName
+    $marker = [ordered]@{
+        app = "Quick Crystal"
+        root = $rootFullPath
+    }
+    $marker | ConvertTo-Json -Compress | Set-Content -LiteralPath $markerPath -Encoding UTF8
+}
+
+function Test-QuickCrystalServer {
+    param([int]$Port)
+
+    try {
+        $markerResponse = Invoke-WebRequest `
+            -Uri "http://127.0.0.1:$Port/$serverMarkerName" `
+            -UseBasicParsing `
+            -TimeoutSec 2
+        if ($markerResponse.StatusCode -ne 200) {
+            return $false
+        }
+
+        $marker = $markerResponse.Content | ConvertFrom-Json
+        if ($marker.app -ne "Quick Crystal" -or -not $marker.root) {
+            return $false
+        }
+
+        $servedRoot = [System.IO.Path]::GetFullPath([string]$marker.root).TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        )
+        if (-not [string]::Equals($servedRoot, $rootFullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+
+        $indexResponse = Invoke-WebRequest `
+            -Uri "http://127.0.0.1:$Port/src/index.html" `
+            -UseBasicParsing `
+            -TimeoutSec 2
+        return $indexResponse.StatusCode -eq 200 -and $indexResponse.Content -match "<title>Quick Crystal</title>"
+    } catch {
+        return $false
+    }
+}
+
+Write-ServerMarker
+
 $port = $preferredPort
 while (-not (Test-PortAvailable -Port $port)) {
+    if (Test-QuickCrystalServer -Port $port) {
+        $url = "http://127.0.0.1:$port/src/index.html"
+        Write-Host "Quick Crystal local server is already running. Opening browser..."
+        Start-Process $url
+        exit 0
+    }
+
     $port += 1
     if ($port -gt 8799) {
         throw "No available local port found between 8765 and 8799."
@@ -77,27 +135,19 @@ Write-Host "Project: $root"
 Write-Host "URL:     $url"
 Write-Host ""
 
-$serverProcess = $null
-try {
-    $serverProcess = Start-Process `
-        -FilePath $pythonExe `
-        -ArgumentList @("-m", "http.server", "$port", "--bind", "127.0.0.1") `
-        -WorkingDirectory $root `
-        -NoNewWindow `
-        -PassThru
+$serverProcess = Start-Process `
+    -FilePath $pythonExe `
+    -ArgumentList @("-m", "http.server", "$port", "--bind", "127.0.0.1") `
+    -WorkingDirectory $root `
+    -WindowStyle Hidden `
+    -PassThru
 
-    if (-not (Wait-ServerReady -Port $port)) {
-        throw "The local server did not start on $url within 10 seconds."
-    }
-
-    Write-Host "Server is ready. Opening browser..."
-    Start-Process $url
-    Write-Host ""
-    Write-Host "Keep this window open while using Quick Crystal."
-    Write-Host "Close this window or press Ctrl+C to stop the local server."
-    Wait-Process -Id $serverProcess.Id
-} finally {
+if (-not (Wait-ServerReady -Port $port)) {
     if ($serverProcess -and -not $serverProcess.HasExited) {
         Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue
     }
+    throw "The local server did not start on $url within 10 seconds."
 }
+
+Write-Host "Server is running in the background. Opening browser..."
+Start-Process $url

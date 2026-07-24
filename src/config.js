@@ -54,9 +54,18 @@ export const ElementData = {
 };
 
 export const ColorPalette = [
-    '#ffffff', '#fcfcf5', '#4b5563', '#111827', '#1e40af', '#0891b2', '#059669',
-    '#84cc16', '#fbbf24', '#ea580c', '#dc2626', '#db2777', '#c026d3', '#7c3aed',
-    '#4f46e5', '#2563eb', '#0f766e', '#166534', '#92400e', '#7f1d1d', '#6b7280'
+    '#B4E2F9', '#C4505A', '#E4E7EE', '#77839A', '#609FD1', '#FFFFFF', '#F6FBFE',
+    '#8BC7E6', '#3E6F9E', '#E7F1F1', '#B7DDDB', '#7FC4BE', '#4EA59E', '#638E89', '#4B586E',
+    '#EFF0DC', '#D6D49A', '#BDB760', '#D6AD65', '#C78655', '#A76552', '#744A44',
+    '#F2E1E4', '#E7B8BE', '#D98893', '#9A3B4E', '#7B385C', '#56405F'
+];
+
+export const OrderedElementDefaultColors = [
+    0xB4E2F9,
+    0xC4505A,
+    0xE4E7EE,
+    0x77839A,
+    0x609FD1
 ];
 
 export const RegexPatterns = {
@@ -74,12 +83,13 @@ export const RegexPatterns = {
 };
 
 export const NormalizedControls = {
-    'atom-size': { min: 0.2, max: 2.5, defaultActual: 1.0 },
-    'bond-size': { min: 0.05, max: 0.5, defaultActual: 0.15 },
+    'atom-size': { min: 0.2, max: 2.5, defaultActual: 0.775 },
+    'bond-size': { min: 0.05, max: 0.5, defaultActual: 0.095 },
     'bond-tol': { min: 0.8, max: 1.5, defaultActual: 1.15 },
     'outline-size': { min: 0.0, max: 0.010, defaultActual: 0.003 },
     'light-intensity': { min: 0.0, max: 2.5, defaultActual: 1.0 },
-    'ambient-intensity': { min: 0.0, max: 2.0, defaultActual: 1.0 }
+    'ambient-intensity': { min: 0.0, max: 2.0, defaultActual: 1.0 },
+    'highlight-size': { min: 300, max: 45, defaultActual: 172.5 }
 };
 
 export const ViewAngleInputIds = ['view-x', 'view-y', 'view-z'];
